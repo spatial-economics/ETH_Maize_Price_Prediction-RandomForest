@@ -1,0 +1,277 @@
+---
+title: "Random Forest Prediction of Maize Prices"
+#author: "Kevin Oluoch"
+#date: "5/23/2019"
+output: 
+  html_document:
+     toc: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+```
+
+
+#### Introduction
+Maize price estimates covering a continuous geographical area are difficult to collect: It costs a lot and takes time to collect the data. Using the price of maize at known locations and the value of spatial variables at these locations, we can create a model for predicting maize prices. Given the values of the spatial variables, the model will consequently predict the price of maize in other locations.
+
+An ideal model should be simple enough to develop and use, yet complex enough to emulate all empirical and/or theoretical associations. Models based on the [random forest algorithm (developed by Leo Breiman)](https://link.springer.com/content/pdf/10.1023%2FA%3A1010933404324.pdf) attempts to achieve this ensemble. The random forest algorithm creates decision-trees that classify the data into predetermined classes - predetermined by the user(Supervised classification). Each decision-tree makes a classification of the data to create a set of responses; the most popular response (classification) is the final output.
+
+In this exercise, we use the "randomForest" library in R, which is based on a FORTRAN code developed by Leo Breiman and Adele Cutler. The exercise is divided into four methodical steps: (I) The Data, describes the data set; (II) Classification Model, describes the model creation steps; and (III) Price Prediction and Results,  describes the  price prediction process and the resulting output.
+
+#### (I) The Data
+There are two sets of data for this exercise: A comma delimited file(CSV) with maize prices from different locations in Ethiopia; and several raster files of weather elements, soil properties and distance to infrastructure/amenities that encompasses the whole of Tanzania. We convert the maize price CSV to a shapefile and use it to extract data from the rasters. This extracted data (Training data) is used to create the random forest model (as the predicting variables) together with the maize price from the CSV (as the response variables). The raster files are subsequently used to predict the price of maize in the whole of Tanzania. 
+
+##### 1. The Maize Prices data
+This data is made up of maize prices collectted at various locations across Tanzania.
+We use the maize price data -given in Ethiopia Birr per kilogram- in the shapefile format (spatial Points Dataframe) . To create this shapefile, we first load the maize prices data into a "data frame" (R object) using the "read.csv" function, which is a wrapper function for "read.table" that is customized for CSV files. 
+(We use the "sp", "raster" and "rgdal" R packages for creating and manipulating spatial data in this exercise. They are all add-on packages that have to be installed from CRAN.)
+
+```{r, results = 'hide'}
+library(raster) # Will load "sp" package as a dependency
+library(rgdal)
+```
+```{r }
+maize.price <- read.csv("./ETH_maizeprices_LSMS.csv")
+head(maize.price, 5) #view the first 5 rows of the data
+```
+
+The longitude and latitude values of the maize price locations are in decimal degrees and based on the [WGS84](https://confluence.qps.nl/qinsy/en/world-geodetic-system-1984-wgs84-29855173.html) coordinate system. So we create an object of class "CRS" (coordinate reference system) in R, that will be used to specify this system. We then use the "data frame" and "CRS" objects, to create a shapefile whose attribute table contains the coordinates and price data. we plot the shapefile to see the distribution of the price locations and ensure they all lie within the borders of Ethiopia.
+```{r}
+# wgs84.prj: projection for coordinates in prices csv
+wgs84.prj <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
+maizeprice <- SpatialPointsDataFrame( coords = data.frame( maize.price$Longitude, maize.price$Latitude ), 
+                                      data = maize.price,
+                                      proj4string = wgs84.prj 
+                                     )
+
+ETH_natbnd <- getData('GADM', country='ETH', level=0)
+plot(ETH_natbnd, axes = TRUE, main = "Locations With Known Maize Prices")
+plot(maizeprice, pch = 20, col = "Red", add = TRUE)
+```
+
+The raster files used in this exercise are in the  [Lambert azimuthal equal-area projection](https://en.wikipedia.org/wiki/Lambert_azimuthal_equal-area_projection), which better preserves areas and distances compared with the WGS84 projection. We transform the projection of the maize price shapefile to match this projection, since it must share the same projection system with the rasters in any spatial process. As before, we create a Lambert Azimuthal Equal-Area (LAEA) projection object of class  "CRS" (coordinate reference system) then use it to transform the coordinates to the LAEA projection.
+```{r}
+laea.prj <- CRS("+proj=laea +lat_0=5 +lon_0=20 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
+
+maizeprice_laea <- spTransform(maizeprice, laea.prj)
+```
+
+
+##### 2. Raster Data Set
+###### a) Raster Data on Weather, Soil and Amenities
+The raster files contain data on weather elements, soil properties and distance to infrastructure/amenities. In this exercise, these files are in a sub-directory of the working directory. You can download them [here](https://osf.io/7jkzf/). The table below gives a short description of each file and a link to the source website.
+
+|Raster | Short description | Derived from:
+|:-----|:---------|:-----|
+|BIO1 | Mean annual temperature (°C * 10, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
+|BIO7 | Mean annual temperature range (°C * 10, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
+|BIO12 | Mean annual precipitation (mm/yr, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
+|BIO15 | Mean rainfall seasonality (cv, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
+|BPP | Predicted 2015 building presence probability | [Africagrids.net](ftp://africagrids.net/)
+|CEC | Predicted topsoil cation exchange capacity (cmol/kg) | [SoilGrids](https://soilgrids.org)
+|CPP | Predicted 2015 cropland presence probability | [Africagrids.net](ftp://africagrids.net/)
+|DCELL | Distance to Cell Tower or WiFi point (km) | [UnwiredLabs](https://unwiredlabs.com)
+|DFRES | Distance to forest reserves (km) | [Protected Planet](https://www.protectedplanet.net/)
+|DGRES | Distance to game reserves (km) | [Protected Planet](https://www.protectedplanet.net/)
+|DLIGHT | Distance to night-lights (km) | [Africagrids.net](ftp://africagrids.net/)
+|DOP1 | Distance to city or town centers (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
+|DOP2 | Distance to village or hamlet centers (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
+|DOR1 | Distance to main roads (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
+|DOR2 | Distance to any known road (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
+|DOWS | Distance to inland water bodies (km) | [SurfaceWater](#https://global-surface-water.appspot.com/)
+|DPARK | Distance to national parks & conservation areas (km) | [Protected Planet](https://www.protectedplanet.net/)
+|DSET | Distance to predicted settlements (km) | [CIESIN](https://ciesin.columbia.edu/data/hrsl/)
+|DTSL | Distance to mean sea level / coast line (km) | [SRTM](http://opentopo.sdsc.edu/raster?opentopoID=OTSRTM.082015.4326.1)
+|DURB | Distance to urban areas (km) | [CIESIN](https://ciesin.columbia.edu/data/hrsl/)
+|EVI | Average enhanced vegetation index (2000-2016) | [Africagrids.net](ftp://africagrids.net/)
+|FIRE | Detected fire density (2001-2015) | [Africagrids.net](ftp://africagrids.net/)
+|LSTD | Average day-time land surface temp. (°C , 2001-2017) | [Africagrids.net](ftp://africagrids.net/)
+|LSTN | Average night-time land surface temp. (°C , 2001-2017) | [Africagrids.net](ftp://africagrids.net/)
+|MB1 | Average MOD13Q1 band 1 reflectance (2001-2016)  | [Africagrids.net](ftp://africagrids.net/)
+|MB2  | Average MOD13Q1 band 2 reflectance (2001-2016) | [Africagrids.net](ftp://africagrids.net/)
+|MB3 | Average MOD13Q1 band 3 reflectance (2001-2016) | [Africagrids.net](ftp://africagrids.net/)
+|MB7 | Average MOD13Q1 band 7 reflectance (2001-2016) | [Africagrids.net](ftp://africagrids.net/)
+|MDEM | Elevation above mean sea level (m) | [MERITDEM](http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/)
+|NPPA | Average annual net primary productivity (kg/m2, 2000-2015) | [Africagrids.net](ftp://africagrids.net/)
+|NPPS | Variance annual net primary productivity (2000-2015) | [Africagrids.net](ftp://africagrids.net/)
+|PARA | Average fAPAR (2000-2017) | [Africagrids.net](ftp://africagrids.net/)
+|PARV | Variance fAPAR (2000-2017) | [Africagrids.net](ftp://africagrids.net/)
+|PH | Predicted topsoil pH | [SoilGrids](https://soilgrids.org)
+|S1VV | Average Sentinel 1 VV radar backscatter (2016) | [Africagrids.net](ftp://africagrids.net/)
+|SLOPE | Slope (%) | [MERITDEM](http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/)
+|SND | Predicted topsoil sand content (%) | [SoilGrids](https://soilgrids.org)
+|SOC | Predicted topsoil organic carbon content (g/kg) | [SoilGrids](https://soilgrids.org)
+|SWIR1 | Average Sentinel 2 SWIR1 reflectance (2016) | [Africagrids.net](ftp://africagrids.net/)
+|SWIR2 | Average Sentinel 2 SWIR2 reflectance (2016) | [Africagrids.net](ftp://africagrids.net/)
+|TIM | Topographic index map | [MERITDEM](http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/)
+|WPOP | Population density prediction (2015) | [WorldPop](#http://www.worldpop.org.uk/data/get_data/)
+
+
+We set up an empty "stack" object that will hold the rasters and assign it the Lambert azimuthal equal-area projection. Consequently, we add the rasters in the sub-directory (named "rasters" in this exercise) to the stack through a "for" loop.
+```{r}
+rasterstack <- stack() 
+crs(rasterstack) <- laea.prj # raster::crs differs with sp::CRS
+
+rasterlist <- list.files(path = "./rasters", 
+                         pattern = "*.tif$", 
+                         full.names = TRUE) # Character vector of relative filepaths
+for (rasterpath in rasterlist) {
+      rasterfile <- raster(rasterpath)
+      rasterstack <- addLayer(rasterstack, rasterfile)
+    }
+```
+
+
+###### b) Add Latitude and Longitude Rasters
+We add longitude and latitude rasters to the stack so that our model considers location in its prediction. The longitude and latitude rasters will have the longitude values and latitude values respectively as the cell values. We use one raster from the stack created earlier as a reference, to ensure the latitude and longitude rasters have the same properties.
+```{r}
+refrenceraster <- rasterstack[[1]]
+```
+
+Create the longitude and latitude rasters in 5 steps: convert the Tanzania's "level 0" shapefile -downloaded earlier- projection to the Lambert azimuthal equal-area projection; transform it to a raster with the reference raster's properties; extract the longitude and latitude values from the created raster; assign the longitude and latitude values to two copies of the created raster; name the raster cell values and add them to the rasters stack.
+```{r}
+# Step 1
+natbnd_laea <- spTransform(ETH_natbnd, laea.prj)
+
+# Step 2
+natbnd.raster <- rasterize(natbnd_laea, refrenceraster)
+
+# Step 3
+latitudes <- xFromCell(natbnd.raster, 1:length(natbnd.raster))  
+longitudes <- yFromCell(natbnd.raster, 1:length(natbnd.raster))
+
+# Step 4
+natbnd.raster.lati <- natbnd.raster.long <- natbnd.raster
+values(natbnd.raster.lati) <- latitudes
+values(natbnd.raster.long) <- longitudes
+
+# Step 5
+names(natbnd.raster.long) <- "Longitude"
+names(natbnd.raster.lati) <- "Latitude"
+rasterstack <- stack(rasterstack, natbnd.raster.long, natbnd.raster.lati)
+```
+
+We end up with a raster stack of all the 43 prediction variables. 
+```{r}
+names(rasterstack)
+```
+
+
+
+
+
+#### (II) Classification Model - Random Forest
+
+The classification model represents the relationship between the response variable (maize prices) and prediction variables (element of feature values in the raster files). It is based on the random forest algorithm, which works by creating decision-trees that "vote" on the most popular classification. The splits (branching) in the decision-trees are determined by random subsets of the prediction variables' values. The number of decision-trees to create, and the number of variables to consider at each split, are determined by the user. 
+We'll use the "randomForest" function from the "randomForest" library to create the model. We'll accept its default value for the number of decision-trees and determine the number of variables to use in each split using the "tuneRF" function (also from "randomForest" library).
+```{r, results = "hide"}
+library(randomForest)
+```
+
+First, we prepare the model training data (response variable and prediction variables). The response variable is composed of georeferenced point data and the prediction variables rasters in a stack; we extract values from locations with a response value in the prediction variables to create the training data. A pixel/cell value may include random errors generated during data collection or data processing. To ensure we get a more representational value, we extract the mean of all pixel values within a radius -equivalent to  5000 metres ground distance - around the response variable location. We remove any columns that have  "NA" as the mean (points with a radius covering areas with no data).
+```{r}
+# Takes Time ~ 20 min
+predict.vrbs = extract(rasterstack, 
+                  maizeprice_laea, 
+                  buffer=5000, # Meters
+                  small=TRUE, 
+                  fun = mean) 
+
+predict.vrbs <- predict.vrbs[complete.cases(predict.vrbs),]
+```
+
+
+
+
+##### 1. Tune The Forest
+By "tune the forest", we mean the process of determining the optimal number of variables to consider at each split in a decision-tree. Too many prediction variables and the algorithm will over-fit; too few prediction variables and the algorithm will under-fit. We use "tuneRF" function from the "randomForest" library to get the possible optimal numbers of prediction variables. The "tuneRF" function takes two arguments: the prediction variables and the response variable. 
+```{r}
+trf <- tuneRF(x=predict.vrbs, # Prediction variables
+              y=maizeprice_laea@data[, "price_MT"] # Responce variable
+              )
+```
+
+We consider the prediction error ( [Out-of-Bag error.](https://en.wikipedia.org/wiki/Out-of-bag_error) ) when selecting the optimal number, from the suggestions made by "tuneRF". 
+```{r}
+(mintree <- trf[which.min(trf[,2]),1])
+```
+
+
+##### 2. Fit The Model
+We create a model with the "randomForest" function which takes as arguments: the response variable, the prediction variables and the optimal number of variables - to consider at each split. We also get the function to rank the prediction variables based on how much influence they have in the decision-trees' results.
+```{r}
+price.model <- randomForest(x=predict.vrbs, # Prediction variables
+                             y=maizeprice_laea@data[, "price_MT"], # Responce variable
+                             mtry=mintree, # Number of variables in subset at each split
+                             importance = TRUE # Assess importance of predictors.
+                             )
+```
+
+We can have a look at the model in detail by plotting it; A plot of the number of trees against OOB error: the error rate as the number of trees increase. 
+```{r}
+plot(price.model)
+```
+
+We can have a look at each variable's influence by plotting their importance based on different indices given by the [importance function](https://www.rdocumentation.org/packages/randomForest/versions/4.6-14/topics/importance).
+```{r}
+varImpPlot(price.model)
+```
+
+
+#### (III) Price Prediction and Results Evaluation
+In this section, we predict the price of maize across the country (Ethiopia) using the data prepared in section one and the model created in section two. We make the prediction via the "predict" function in the "raster" package. The function produces a raster file, which has maize prices (ETB/KG) as the pixel/cell values. Finally, we evaluate the prediction by comparing the values the model predicts with the actual prices collected.
+
+##### 1. Price Prediction
+The spatial prediction -the variables are spatial- function takes two arguments: the prediction variables and the price prediction model.  
+
+```{r}
+# NB:Both the "stats" package(loaded as a randomForest dependency) and 
+# the "raster" package have a function called "predict" that can make predictions. 
+# Since we are dealing with spatial data, we add a prefix to the function name to 
+# ensure the "predict" function in the raster "package" is used.
+
+spatial.prediction <- raster::predict(rasterstack, # Prediction variable rasters
+                                      price.model # Prediction  model
+                                      )            # takes time!
+```
+
+The raster of predicted maize prices is our main output; we plot it to see the maize price distribution - prices in Ethiopia Birr per Kilogram.
+```{r}
+# Get Tanzania Regions Shapefile
+ETH_natbnd_1 <- getData('GADM', country='ETH', level=1)
+# Transform to laea projection
+ETH_natbnd_1_laea <- spTransform(ETH_natbnd_1, laea.prj)
+
+#  Plot the Predicted prices and the regional boundaries
+plot(spatial.prediction, main = "Predicted Maize Prices (ETB/KG)")
+plot(ETH_natbnd_1_laea, add = TRUE)
+```
+
+
+##### 2. Prediction Evaluation
+To assess the predictions, we will compare the observed maize prices (the training data) with the predicted maize prices (predicted using the training data). We plot the observed and predicted values to see the trend. 
+```{r}
+# Considering that the training data, is in point form as opposed to raster, 
+# We will make a non-spatial prediction using the predict function in the "stats" package
+
+non.spatial.prediction <- stats::predict(price.model, predict.vrbs)
+plot(
+  maizeprice_laea@data[, "price_MT"],
+  non.spatial.prediction,
+  col = 'blue',
+  xlab = 'observed',
+  ylab = 'predicted',
+  xlim = c(00, 1600),
+  ylim = c(00, 1600)
+)
+lm_line <- lm(non.spatial.prediction ~ maizeprice_laea@data[, "price_MT"], 
+              data = data.frame(maizeprice_laea@data[, "price_MT"], 
+                                non.spatial.prediction
+                                )
+              )
+abline(lm_line)
+```
+
+<!-- To conclude, the predicted maize prices and the observed maize prices are positively are correlated even though the observed prices are mostly figures that are multiples of 50 such as 250, 800 and 1000(TZS/KG).  -->
+
