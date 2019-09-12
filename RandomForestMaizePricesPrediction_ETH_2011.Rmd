@@ -32,7 +32,7 @@ library(raster) # Will load "sp" package as a dependency
 library(rgdal)
 ```
 ```{r }
-maize.price <- read.csv("data/ethMaizePrice2008.csv")
+maize.price <- read.csv("data/ethMaizePrice2011.csv")
 head(maize.price, 5) #view the first 5 rows of the data
 ```
 
@@ -68,24 +68,14 @@ The raster files contain data on weather elements, soil properties and distance 
 |BIO7 | Mean annual temperature range (°C * 10, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
 |BIO12 | Mean annual precipitation (mm/yr, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
 |BIO15 | Mean rainfall seasonality (cv, 1979-2013) | [CHELSA](http://chelsa-climate.org/downloads/)
-|BPP | Predicted 2015 building presence probability | [Africagrids.net](ftp://africagrids.net/)
 |CEC | Predicted topsoil cation exchange capacity (cmol/kg) | [SoilGrids](https://soilgrids.org)
-|CPP | Predicted 2015 cropland presence probability | [Africagrids.net](ftp://africagrids.net/)
 |DCELL | Distance to Cell Tower or WiFi point (km) | [UnwiredLabs](https://unwiredlabs.com)
-|DFRES | Distance to forest reserves (km) | [Protected Planet](https://www.protectedplanet.net/)
 |DGRES | Distance to game reserves (km) | [Protected Planet](https://www.protectedplanet.net/)
-|DLIGHT | Distance to night-lights (km) | [Africagrids.net](ftp://africagrids.net/)
-|DOP1 | Distance to city or town centers (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
-|DOP2 | Distance to village or hamlet centers (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
 |DOR1 | Distance to main roads (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
 |DOR2 | Distance to any known road (km) | [Geofabrik](#https://www.geofabrik.de/data/download.html)
 |DOWS | Distance to inland water bodies (km) | [SurfaceWater](#https://global-surface-water.appspot.com/)
 |DPARK | Distance to national parks & conservation areas (km) | [Protected Planet](https://www.protectedplanet.net/)
-|DSET | Distance to predicted settlements (km) | [CIESIN](https://ciesin.columbia.edu/data/hrsl/)
-|DTSL | Distance to mean sea level / coast line (km) | [SRTM](http://opentopo.sdsc.edu/raster?opentopoID=OTSRTM.082015.4326.1)
-|DURB | Distance to urban areas (km) | [CIESIN](https://ciesin.columbia.edu/data/hrsl/)
 |EVI | Average enhanced vegetation index (2000-2016) | [Africagrids.net](ftp://africagrids.net/)
-|FIRE | Detected fire density (2001-2015) | [Africagrids.net](ftp://africagrids.net/)
 |LSTD | Average day-time land surface temp. (°C , 2001-2017) | [Africagrids.net](ftp://africagrids.net/)
 |LSTN | Average night-time land surface temp. (°C , 2001-2017) | [Africagrids.net](ftp://africagrids.net/)
 |MB1 | Average MOD13Q1 band 1 reflectance (2001-2016)  | [Africagrids.net](ftp://africagrids.net/)
@@ -102,8 +92,6 @@ The raster files contain data on weather elements, soil properties and distance 
 |SLOPE | Slope (%) | [MERITDEM](http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/)
 |SND | Predicted topsoil sand content (%) | [SoilGrids](https://soilgrids.org)
 |SOC | Predicted topsoil organic carbon content (g/kg) | [SoilGrids](https://soilgrids.org)
-|SWIR1 | Average Sentinel 2 SWIR1 reflectance (2016) | [Africagrids.net](ftp://africagrids.net/)
-|SWIR2 | Average Sentinel 2 SWIR2 reflectance (2016) | [Africagrids.net](ftp://africagrids.net/)
 |TIM | Topographic index map | [MERITDEM](http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_DEM/)
 |WPOP | Population density prediction (2015) | [WorldPop](#http://www.worldpop.org.uk/data/get_data/)
 
@@ -244,7 +232,7 @@ ETH_natbnd_1 <- getData('GADM', country='ETH', level=1)
 ETH_natbnd_1_laea <- spTransform(ETH_natbnd_1, laea.prj)
 
 #  Plot the Predicted prices and the regional boundaries
-plot(spatial.prediction, main = "Predicted Maize Prices (ETB/KG)")
+plot(spatial.prediction, main = "Ethiopia, 2011 Predicted Maize Prices (ETB/KG)")
 plot(ETH_natbnd_1_laea, add = TRUE)
 ```
 
@@ -262,8 +250,8 @@ plot(
   col = 'blue',
   xlab = 'observed',
   ylab = 'predicted',
-  xlim = c(00, 1600),
-  ylim = c(00, 1600)
+  xlim = c(00, 16),
+  ylim = c(00, 16)
 )
 lm_line <- lm(non.spatial.prediction ~ maizeprice_laea@data[, "Maize.Price_BirrKg"], 
               data = data.frame(maizeprice_laea@data[, "Maize.Price_BirrKg"], 
