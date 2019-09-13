@@ -32,7 +32,7 @@ library(raster) # Will load "sp" package as a dependency
 library(rgdal)
 ```
 ```{r }
-maize.price <- read.csv("data/ethMaizePrice2014.csv")
+maize.price <- read.csv("data/ethMaizePrice2010.csv")
 head(maize.price, 5) #view the first 5 rows of the data
 ```
 
@@ -61,7 +61,6 @@ maizeprice_laea <- spTransform(maizeprice, laea.prj)
 ##### 2. Raster Data Set
 ###### a) Raster Data on Weather, Soil and Amenities
 The raster files contain data on weather elements, soil properties and distance to infrastructure/amenities. In this exercise, these files are in a sub-directory of the working directory. You can download them [here](https://osf.io/7jkzf/). The table below gives a short description of each file and a link to the source website.
-
 
 |Raster | Short description | Derived from:
 |:-----|:---------|:-----|
@@ -233,7 +232,7 @@ ETH_natbnd_1 <- getData('GADM', country='ETH', level=1)
 ETH_natbnd_1_laea <- spTransform(ETH_natbnd_1, laea.prj)
 
 #  Plot the Predicted prices and the regional boundaries
-plot(spatial.prediction, main = "Ethiopia, 2014 Predicted Maize Prices (ETB/KG)")
+plot(spatial.prediction, main = "Ethiopia, 2010 Predicted Maize Prices (ETB/KG)")
 plot(ETH_natbnd_1_laea, add = TRUE)
 ```
 
